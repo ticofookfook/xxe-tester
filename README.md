@@ -201,6 +201,160 @@ Use a opção `-H "Connection: close"` para evitar problemas com conexões persi
 
 - Aumente o número de threads (`-t 10`) para testes mais rápidos
 - Adicione delay (`-d 0.5`) se o servidor estiver limitando requisições
+# Guia de Uso do XXE Tester
+
+Este documento apresenta as melhores práticas e estratégias eficazes para utilizar a ferramenta XXE Tester em seus testes de segurança.
+
+## Métodos de Detecção de Sucesso
+
+O XXE Tester oferece duas abordagens principais para identificar quando um payload XXE foi bem-sucedido:
+
+### 1. Detecção Específica com o Parâmetro `-ds`
+
+O parâmetro `-ds` (detect-success) permite que você especifique uma string que, quando encontrada na resposta, indica que o payload XXE foi executado com sucesso.
+
+#### Vantagens:
+- **Maior precisão**: Você define exatamente o que considera um "sucesso"
+- **Menos falsos positivos**: A ferramenta não precisará adivinhar o que constitui uma resposta bem-sucedida
+- **Específico para o alvo**: Diferentes alvos podem ter diferentes indicadores de sucesso
+
+#### Exemplos de uso:
+```bash
+# Para leitura de /etc/passwd
+python xxe_tester.py https://alvo.com/endpoint ./payloads -ds "root:"
+
+# Para leitura de arquivos Windows
+python xxe_tester.py https://alvo.com/endpoint ./payloads -ds "[fonts]"
+
+# Para SSRF
+python xxe_tester.py https://alvo.com/endpoint ./payloads -ds "Internal Server Error"
+```
+
+### 2. Detecção Heurística (Sem o parâmetro `-ds`)
+
+Quando você não especifica o parâmetro `-ds`, a ferramenta tenta identificar automaticamente respostas bem-sucedidas usando heurísticas:
+
+#### Como funciona:
+- Analisa o código de status HTTP (geralmente 200)
+- Verifica o tamanho da resposta
+- Avalia a presença de mensagens de erro comuns
+- Compara as respostas entre diferentes payloads
+
+#### Exemplos de uso:
+```bash
+# Execução básica com detecção heurística
+python xxe_tester.py https://alvo.com/endpoint ./payloads
+
+# Com modo verboso para análise mais detalhada
+python xxe_tester.py https://alvo.com/endpoint ./payloads -v
+```
+
+## Fluxo de Trabalho Recomendado
+
+Para obter os melhores resultados, recomendamos o seguinte fluxo de trabalho:
+
+### 1. Exploração Inicial
+
+Comece com uma execução exploratória para entender como o alvo responde:
+
+```bash
+python xxe_tester.py https://alvo.com/endpoint ./payloads -v -o resultados_iniciais.json
+```
+
+Nesta fase:
+- Use o modo verboso (`-v`) para ver detalhes das respostas
+- Salve os resultados para análise posterior (`-o`)
+- Execute contra todos os payloads disponíveis
+
+### 2. Análise dos Resultados
+
+Examine os resultados iniciais para identificar:
+- Padrões em respostas bem-sucedidas
+- Textos específicos que aparecem apenas quando há sucesso
+- Diferenças entre respostas normais e anômalas
+
+### 3. Teste Focado
+
+Com base na análise, execute testes mais precisos:
+
+```bash
+python xxe_tester.py https://alvo.com/endpoint ./payloads -ds "padrão_identificado" -o resultados_focados.json
+```
+
+### 4. Refinamento
+
+Para alvos complexos ou protegidos por WAF:
+
+```bash
+# Teste apenas com os payloads UTF-16LE (comumente eficazes contra WAFs)
+python xxe_tester.py https://alvo.com/endpoint ./payloads_utf16le -ds "padrão_identificado" -H "Content-Type: application/xml; charset=UTF-16LE" 
+```
+
+## Situações Específicas
+
+### Aplicações com Autenticação
+
+Para aplicações que requerem autenticação:
+
+```bash
+python xxe_tester.py https://alvo.com/endpoint ./payloads \
+  -c "sessao=ABC123" \
+  -H "Authorization: Bearer TOKEN" \
+  -ds "conteúdo_sensível"
+```
+
+### Alvos com Proteção WAF
+
+Para alvos com WAF:
+
+```bash
+# Adicione delay entre requisições
+python xxe_tester.py https://alvo.com/endpoint ./payloads -d 1.5 -ds "padrão_identificado"
+
+# Use um user-agent diferente
+python xxe_tester.py https://alvo.com/endpoint ./payloads -ua "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" -ds "padrão_identificado"
+```
+
+### Testes em Grande Escala
+
+Para testes em múltiplos endpoints:
+
+```bash
+# Use threads para maior velocidade
+python xxe_tester.py https://alvo.com/endpoint ./payloads -t 10 -ds "padrão_identificado"
+```
+
+## Dicas para Detecção Eficaz
+
+### Escolhendo padrões para `-ds`:
+
+1. **Arquivos do sistema**: Procure por conteúdo único e previsível
+   - Linux: `root:`, `bin:`, `nobody:`
+   - Windows: `[fonts]`, `[extensions]`, `[mci extensions]`
+
+2. **SSRF**: Procure por respostas específicas de serviços internos
+   - `<title>Internal Dashboard</title>`
+   - `"status": "running"`
+   - `HTTP/1.1 200 OK Server: Apache-Coyote`
+
+3. **Erros**: Procure por mensagens que indicam processamento do payload
+   - `java.io.FileNotFoundException`
+   - `System.IO.FileNotFoundException`
+   - `failed to open stream`
+
+### Quando Não Usar `-ds`:
+
+- Fase inicial de reconhecimento
+- Quando você não sabe exatamente o que procurar
+- Testes exploratórios em novos alvos
+- Quando as respostas variam significativamente
+
+## Conclusão
+
+Embora o XXE Tester funcione sem o parâmetro `-ds`, o uso de detecção específica é recomendado para resultados mais confiáveis. Comece com testes heurísticos para entender o comportamento do alvo e depois refine seus testes com detecção específica.
+
+A combinação de ambas as abordagens geralmente proporciona a melhor experiência de teste, permitindo primeiro descobrir como o sistema responde e depois focar nos payloads mais promissores com critérios específicos de sucesso.
+
 
 ## Futuras Melhorias
 
